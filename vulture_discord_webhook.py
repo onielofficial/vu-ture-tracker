@@ -1,110 +1,72 @@
 """
 whereisvulture.com → Discord Webhook
-ดึงข้อมูลตำแหน่ง Titan & Nomad แล้วส่งไป Discord
+เรียก API ตรงๆ ที่ vulture-worker.arcadianglitch.workers.dev/location
 """
 
 import requests
-from bs4 import BeautifulSoup
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/YOUR_WEBHOOK_HERE")
-SOURCE_URL = "https://whereisvulture.com"
+API_URL = "https://vulture-worker.arcadianglitch.workers.dev/location"
 # ───────────────────────────────────────────────────────────────────────────────
-
-# Headers จำลองเป็น browser จริง เพื่อหลบการบล็อก bot
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Cache-Control": "max-age=0",
-}
 
 
 def fetch_locations() -> list[dict]:
-    """ดึงข้อมูลตำแหน่งจาก whereisvulture.com"""
-
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
-    resp = session.get(SOURCE_URL, timeout=20)
+    """เรียก API โดยตรง ได้ JSON สะอาด ไม่ต้อง scrape"""
+    resp = requests.get(API_URL, timeout=15)
     resp.raise_for_status()
+    data = resp.json()
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    # data มีหน้าตาแบบนี้:
+    # {
+    #   "cop1": "Titan (Grid 153:121)",
+    #   "cop2": "Nomad (Grid 189:157)",
+    #   "timestamp": "2026-04-21T00:58:03.150Z",
+    #   "searching": false
+    # }
+
     locations = []
-
-    # วิธีที่ 1: ดึงจาก list items รูปแบบ "• Titan (Grid 153:121)"
-    for li in soup.find_all("li"):
-        text = li.get_text(strip=True)
-        if "Grid" in text:
-            match = re.search(r"([A-Za-z]+)\s*\(Grid\s*([\d:,\s]+)\)", text)
-            if match:
-                grid = match.group(2).strip().replace(", ", ":").replace(",", ":")
-                locations.append({
-                    "name": match.group(1).capitalize(),
-                    "grid": grid,
-                })
-
-    # วิธีที่ 2 (fallback): ดึงจาก card — รูปแบบ "TITAN  153, 121"
-    if not locations:
-        for card in soup.find_all(class_=lambda c: c and "card" in c.lower()):
-            header = card.find(class_=lambda c: c and ("header" in c.lower() or "title" in c.lower()))
-            if header:
-                text = header.get_text(" ", strip=True)
-                match = re.search(r"([A-Z][a-zA-Z]+)\s+([\d]+)[,\s]+([\d]+)", text)
-                if match:
-                    locations.append({
-                        "name": match.group(1).capitalize(),
-                        "grid": f"{match.group(2)}:{match.group(3)}",
-                    })
-
-    # วิธีที่ 3 (fallback): ค้นหาจาก text ทั้งหน้า
-    if not locations:
-        full_text = soup.get_text()
-        for match in re.finditer(r"(Titan|Nomad|TITAN|NOMAD)\s*[\(\[]?Grid\s*([\d]+)[:\s,]+([\d]+)", full_text, re.IGNORECASE):
+    for key in ["cop1", "cop2", "cop3", "cop4"]:  # รองรับถ้าเพิ่ม cop ในอนาคต
+        if key not in data or not data[key]:
+            continue
+        raw = data[key]  # เช่น "Titan (Grid 153:121)"
+        match = re.match(r"(.+?)\s*\(Grid\s*([\d:]+)\)", raw)
+        if match:
             locations.append({
-                "name": match.group(1).capitalize(),
-                "grid": f"{match.group(2)}:{match.group(3)}",
+                "name": match.group(1).strip(),
+                "grid": match.group(2).strip(),
             })
+        else:
+            # ถ้ารูปแบบต่างออกไป เก็บ raw ไว้ก่อน
+            locations.append({"name": key.upper(), "grid": raw})
 
-    # ลบ duplicate
-    seen = set()
-    unique = []
-    for loc in locations:
-        key = loc["name"].lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(loc)
-
-    return unique
+    return locations, data.get("timestamp"), data.get("searching", False)
 
 
-def build_discord_payload(locations: list[dict]) -> dict:
+def build_discord_payload(locations, timestamp_iso, searching) -> dict:
     """สร้าง Discord embed payload"""
-    now = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
+    now = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+
+    # แปลง timestamp จาก API เป็นวันที่อ่านง่าย
+    if timestamp_iso:
+        try:
+            dt = datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00"))
+            last_seen = dt.strftime("%d %b %Y %H:%M UTC")
+        except Exception:
+            last_seen = timestamp_iso
+    else:
+        last_seen = now
 
     if not locations:
         return {
             "username": "Vulture Tracker",
             "embeds": [{
-                "title": "⚠️ ไม่พบข้อมูลตำแหน่ง",
-                "description": (
-                    "ไม่สามารถดึงข้อมูลจาก whereisvulture.com ได้\n"
-                    "อาจเป็นเพราะเว็บยังไม่อัปเดต หรือโครงสร้างเว็บเปลี่ยนไป"
-                ),
-                "color": 0xFF4444,
+                "title": "🔍 กำลังค้นหาตำแหน่ง" if searching else "⚠️ ไม่พบข้อมูลตำแหน่ง",
+                "description": "Vulture กำลัง searching อยู่ครับ รอการอัปเดตครั้งถัดไป" if searching else "ยังไม่มีข้อมูลในขณะนี้",
+                "color": 0xF5C400 if searching else 0xFF4444,
                 "footer": {"text": f"อัปเดตล่าสุด: {now}"},
             }]
         }
@@ -117,21 +79,28 @@ def build_discord_payload(locations: list[dict]) -> dict:
             "inline": True,
         })
 
+    # เพิ่ม field แสดงสถานะ searching
+    if searching:
+        fields.append({
+            "name": "🔍 สถานะ",
+            "value": "กำลัง searching หาตำแหน่งใหม่",
+            "inline": False,
+        })
+
     return {
         "username": "Vulture Tracker",
         "embeds": [{
             "title": "🦅 Vulture Current Locations",
-            "url": SOURCE_URL,
+            "url": "https://whereisvulture.com",
             "description": "ตำแหน่งปัจจุบันของ Operator ใน Gray Zone Warfare",
             "color": 0xF5C400,
             "fields": fields,
-            "footer": {"text": f"📡 whereisvulture.com  •  อัปเดต: {now}"},
+            "footer": {"text": f"📡 ข้อมูล ณ {last_seen}"},
         }]
     }
 
 
 def send_to_discord(payload: dict) -> bool:
-    """ส่ง payload ไปยัง Discord webhook"""
     resp = requests.post(
         DISCORD_WEBHOOK_URL,
         json=payload,
@@ -147,22 +116,21 @@ def send_to_discord(payload: dict) -> bool:
 
 
 def main():
-    print("🔍 กำลังดึงข้อมูลจาก whereisvulture.com ...")
-
+    print("🔍 กำลังดึงข้อมูลจาก API ...")
     try:
-        locations = fetch_locations()
+        locations, timestamp, searching = fetch_locations()
     except Exception as e:
         print(f"❌ ดึงข้อมูลไม่ได้: {e}")
-        locations = []
+        locations, timestamp, searching = [], None, False
 
     if locations:
         for loc in locations:
             print(f"   📍 {loc['name']}  Grid {loc['grid']}")
     else:
-        print("   ⚠️  ไม่พบข้อมูลตำแหน่ง")
+        print(f"   ⚠️  ไม่พบข้อมูล (searching={searching})")
 
     print("\n📤 กำลังส่งไป Discord ...")
-    payload = build_discord_payload(locations)
+    payload = build_discord_payload(locations, timestamp, searching)
     send_to_discord(payload)
 
 
