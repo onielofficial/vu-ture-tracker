@@ -119,7 +119,7 @@ def build_discord_payload(locations, timestamp_iso, searching) -> dict:
             "url": "https://whereisvulture.com",
             "description": (
                 "**Intel live** จาก [whereisvulture.com](https://whereisvulture.com)\n"
-                "ตำแหน่งปัจจุบันของ Operator ใน **Gray Zone Warfare**\n"
+                "ตำแหน่งปัจจุบันของ Vulture ใน **Gray Zone Warfare**\n"
                 "━━━━━━━━━━━━━━━━━━━━━━"
             ),
             "color": 0xF5C400,         # สีเหลือง Mithras
