@@ -1,1 +1,26 @@
-# ชื่อ workflow ที่จะแสดงใน Actions tab name: Vulture Tracker on: schedule: - cron: '0 * * * *' # ทุก 1 ชั่วโมง workflow_dispatch: # กดรันมือได้ jobs: send-webhook: runs-on: ubuntu-latest steps: - name: Checkout code uses: actions/checkout@v4 - name: Setup Python uses: actions/setup-python@v5 with: python-version: '3.11' - name: Install dependencies run: pip install -r requirements.txt - name: Run Vulture Tracker env: DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }} run: python vulture_discord_webhook.py
+name: Vulture Tracker
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  send-webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Vulture Tracker
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python vulture_discord_webhook.py
