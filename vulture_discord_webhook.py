@@ -145,7 +145,7 @@ def main():
     now_utc = datetime.now(timezone.utc)
     print(f"🕐 เวลาปัจจุบัน: {now_utc.strftime('%A %d %b %Y %H:%M UTC')}")
 
-    if not is_monday_thailand():
+    if False:
         print("📅 วันนี้ไม่ใช่วันจันทร์ — ข้ามการส่ง Discord (keep-alive run)")
         print("✅ workflow รันสำเร็จ repo ยังคง active")
         return
