@@ -1,6 +1,6 @@
 """
 whereisvulture.com → Discord Webhook
-สไตล์ CLASSIFIED INTEL + โลโก้ทีม Mithras
+สไตล์ตรงตามภาพ ref เป๊ะ
 """
 
 import requests
@@ -12,11 +12,9 @@ from datetime import datetime, timezone, timedelta
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/YOUR_WEBHOOK_HERE")
 API_URL = "https://vulture-worker.arcadianglitch.workers.dev/location"
 
-# โลโก้ทีม (แก้ URL ตรงนี้ถ้าเปลี่ยนรูปในอนาคต)
-TEAM_LOGO_URL = "https://i.postimg.cc/VrrJBnK2/render2.png"
+TEAM_LOGO_URL    = "https://i.postimg.cc/VrrJBnK2/render2.png"
 MITHRAS_ICON_URL = TEAM_LOGO_URL
 
-# สีธีม
 COLOR_GOLD   = 0xD4A017
 COLOR_RED    = 0xC0392B
 COLOR_ORANGE = 0xE67E22
@@ -32,16 +30,13 @@ def fetch_locations():
         if key not in data or not data[key]:
             continue
         raw = data[key]
-        match = re.match(r"(.+?)\s*\(Grid\s*([\d:]+)\)", raw)
-        if match:
-            locations.append({
-                "name": match.group(1).strip(),
-                "grid": match.group(2).strip(),
-            })
+        m = re.match(r"(.+?)\s*\(Grid\s*([\d:]+)\)", raw)
+        if m:
+            locations.append({"name": m.group(1).strip(), "grid": m.group(2).strip()})
     return locations, data.get("timestamp"), data.get("searching", False)
 
 
-def format_timestamp(ts):
+def format_ts(ts):
     if not ts:
         return datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
     try:
@@ -52,22 +47,21 @@ def format_timestamp(ts):
 
 
 def is_monday_thailand():
-    now_thai = datetime.now(timezone.utc) + timedelta(hours=7)
-    return now_thai.weekday() == 0
+    return (datetime.now(timezone.utc) + timedelta(hours=7)).weekday() == 0
 
 
-def build_discord_payload(locations, timestamp_iso, searching):
-    last_seen = format_timestamp(timestamp_iso)
-    now = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+def build_payload(locations, timestamp_iso, searching):
+    last_seen = format_ts(timestamp_iso)
+    now       = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
 
-    # ── ไม่มีข้อมูล / searching ─────────────────────────────────────────────
+    # ── ไม่มีข้อมูล ─────────────────────────────────────────────────────────
     if not locations:
         return {
-            "username": "MITHRAS INTEL",
+            "username":   "MITHRAS INTEL",
             "avatar_url": MITHRAS_ICON_URL,
             "embeds": [{
                 "author": {
-                    "name": "MITHRAS INTELLIGENCE NETWORK",
+                    "name":     "MITHRAS INTELLIGENCE NETWORK",
                     "icon_url": MITHRAS_ICON_URL,
                 },
                 "title": "🔍  VULTURE — SEARCHING" if searching else "⚠️  VULTURE — NO SIGNAL",
@@ -76,10 +70,10 @@ def build_discord_payload(locations, timestamp_iso, searching):
                     if searching else
                     "```\nSTATUS   : NO DATA\nSIGNAL   : LOST\n```"
                 ),
-                "color": COLOR_ORANGE if searching else COLOR_RED,
+                "color":     COLOR_ORANGE if searching else COLOR_RED,
                 "thumbnail": {"url": TEAM_LOGO_URL},
                 "footer": {
-                    "text": f"MITHRAS INTEL  •  {now}",
+                    "text":     f"MITHRAS INTEL  •  {now}",
                     "icon_url": MITHRAS_ICON_URL,
                 },
             }]
@@ -89,36 +83,35 @@ def build_discord_payload(locations, timestamp_iso, searching):
     fields = []
     for loc in locations:
         fields.append({
-            "name": f"🎯  {loc['name'].upper()}",
-            "value": f"```\nGRID : {loc['grid']}\n```",
+            "name":   f"🎯  {loc['name'].upper()}",
+            "value":  f"```\nGRID : {loc['grid']}\n```",
             "inline": True,
         })
-
     fields.append({
-        "name": "📡  LAST CONFIRMED",
-        "value": f"```\n{last_seen}\n```",
+        "name":   "📡  LAST CONFIRMED",
+        "value":  f"```\n{last_seen}\n```",
         "inline": False,
     })
 
     return {
-        "username": "MITHRAS INTEL",
+        "username":   "MITHRAS INTEL",
         "avatar_url": MITHRAS_ICON_URL,
         "embeds": [{
             "author": {
-                "name": "MITHRAS INTELLIGENCE NETWORK",
+                "name":     "MITHRAS INTELLIGENCE NETWORK",
                 "icon_url": MITHRAS_ICON_URL,
-                "url": "https://whereisvulture.com",
+                "url":      "https://whereisvulture.com",
             },
             "title": "🦅  VULTURE ACTUAL — POSITION CONFIRMED",
             "description": (
                 "```ansi\n\u001b[2;33m██ CLASSIFIED INTEL ██\u001b[0m\n```"
                 "ตำแหน่งปัจจุบันของ **VULTURE** ใน Gray Zone Warfare"
             ),
-            "color": COLOR_GOLD,
+            "color":     COLOR_GOLD,
             "thumbnail": {"url": TEAM_LOGO_URL},
-            "fields": fields,
+            "fields":    fields,
             "footer": {
-                "text": "MITHRAS INTEL  •  whereisvulture.com",
+                "text":     "MITHRAS INTEL  •  whereisvulture.com",
                 "icon_url": MITHRAS_ICON_URL,
             },
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -126,46 +119,39 @@ def build_discord_payload(locations, timestamp_iso, searching):
     }
 
 
-def send_to_discord(payload):
-    resp = requests.post(
+def send(payload):
+    r = requests.post(
         DISCORD_WEBHOOK_URL,
         json=payload,
         headers={"Content-Type": "application/json"},
         timeout=10,
     )
-    if resp.status_code in (200, 204):
+    if r.status_code in (200, 204):
         print("✅ ส่ง Discord webhook สำเร็จ!")
         return True
-    else:
-        print(f"❌ Discord webhook error: {resp.status_code} — {resp.text}")
-        return False
+    print(f"❌ error: {r.status_code} — {r.text}")
+    return False
 
 
 def main():
     now_utc = datetime.now(timezone.utc)
-    print(f"🕐 เวลาปัจจุบัน: {now_utc.strftime('%A %d %b %Y %H:%M UTC')}")
+    print(f"🕐 {now_utc.strftime('%A %d %b %Y %H:%M UTC')}")
 
     if False:
-        print("📅 วันนี้ไม่ใช่วันจันทร์ — ข้ามการส่ง Discord (keep-alive run)")
-        print("✅ workflow รันสำเร็จ repo ยังคง active")
+        print("📅 ไม่ใช่วันจันทร์ — keep-alive run เท่านั้น")
         return
 
-    print("✅ วันจันทร์ — เริ่มดึงข้อมูลและส่ง Discord ...")
+    print("✅ วันจันทร์ — ส่ง Discord ...")
     try:
-        locations, timestamp, searching = fetch_locations()
+        locations, ts, searching = fetch_locations()
     except Exception as e:
-        print(f"❌ ดึงข้อมูลไม่ได้: {e}")
-        locations, timestamp, searching = [], None, False
+        print(f"❌ {e}")
+        locations, ts, searching = [], None, False
 
-    if locations:
-        for loc in locations:
-            print(f"   📍 {loc['name']}  Grid {loc['grid']}")
-    else:
-        print(f"   ⚠️  ไม่พบข้อมูล (searching={searching})")
+    for loc in locations:
+        print(f"   📍 {loc['name']}  Grid {loc['grid']}")
 
-    print("\n📤 กำลังส่งไป Discord ...")
-    payload = build_discord_payload(locations, timestamp, searching)
-    send_to_discord(payload)
+    send(build_payload(locations, ts, searching))
 
 
 if __name__ == "__main__":
